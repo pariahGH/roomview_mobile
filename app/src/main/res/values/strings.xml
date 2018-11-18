@@ -1,0 +1,5 @@
+<resources>
+    <string name="app_name">Roomview Mobile</string>
+    <string name="instructions">CSV must have IP, Room fields - load using above button.</string>
+    <string name="button">Load CSV</string>
+</resources>
