@@ -47,8 +47,7 @@ class RoomFragment: Fragment(){
                     if(resultstring.contains(teststring)){
                         listener.runOnUiThread {
                             listener.dialog(room)
-                            //Toast.makeText(listener, "Help Request from "+room.room, Toast.LENGTH_LONG).show()
-                            System.out.println("Help Request from "+room.room)
+                            //System.out.println("Help Request from "+room.room)
                         }
                     }
                 }

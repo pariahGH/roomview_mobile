@@ -1,9 +1,6 @@
 package tech.teksavvy.roomviewmobile
 
-import android.app.Activity
-import android.app.AlertDialog
-import android.app.NotificationChannel
-import android.app.NotificationManager
+import android.app.*
 import android.content.Context
 import android.content.Intent
 import android.graphics.Color
@@ -12,6 +9,7 @@ import android.os.Build
 import android.support.v7.app.AppCompatActivity
 import android.os.Bundle
 import android.support.v4.app.NotificationCompat
+import android.support.v4.app.NotificationCompat.VISIBILITY_PUBLIC
 import android.support.v4.app.NotificationManagerCompat
 import android.widget.Toast
 import com.univocity.parsers.annotations.Parsed
@@ -113,24 +111,28 @@ class MainActivity : AppCompatActivity() {
 
     fun dialog(room:RoomItem){
         message += "\n" + room.room
+        val pendingIntent: PendingIntent = PendingIntent.getActivity(this, 0, Intent(this, MainActivity::class.java).apply {
+            flags = Intent.FLAG_ACTIVITY_CLEAR_TOP
+        }, 0)
+        val mBuilder = NotificationCompat.Builder(this, "notifications")
+                .setSmallIcon(R.drawable.untitled)
+                .setContentTitle("Roomview Mobile")
+                .setContentText(message.replace("\n"," "))
+                .setPriority(NotificationCompat.PRIORITY_DEFAULT)
+                .setLights(Color.RED, 500,500)
+                .setVibrate(arrayOf<Long>(1000, 1000, 1000).toLongArray())
+                .setAutoCancel(true)
+                .setVisibility(VISIBILITY_PUBLIC)
+                .setContentIntent(pendingIntent)
+        with(NotificationManagerCompat.from(this)) {
+            notify(1, mBuilder.build())
+        }
         if(dialog == null) {
             dialog = AlertDialog.Builder(this).setMessage(message).setTitle("Help Request")
                     .setPositiveButton("OK") { _, _ -> dialog = null; message = "Help Request From:"}.create()
             dialog!!.show()
         }else{
             dialog!!.setMessage(message)
-        }
-        //TODO: show notification and vibrate
-        val mBuilder = NotificationCompat.Builder(this, "notifications")
-                .setSmallIcon(R.drawable.notification_icon_background)
-                .setContentTitle("Roomview Mobile")
-                .setContentText(message)
-                .setPriority(NotificationCompat.PRIORITY_DEFAULT)
-                .setLights(Color.RED, 500,500)
-                .setVibrate(arrayOf<Long>(1000, 1000, 1000).toLongArray())
-        with(NotificationManagerCompat.from(this)) {
-            // notificationId is a unique int for each notification that you must define
-            notify(1, mBuilder.build())
         }
     }
 }
