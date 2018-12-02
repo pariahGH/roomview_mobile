@@ -2,11 +2,17 @@ package tech.teksavvy.roomviewmobile
 
 import android.app.Activity
 import android.app.AlertDialog
+import android.app.NotificationChannel
+import android.app.NotificationManager
 import android.content.Context
 import android.content.Intent
+import android.graphics.Color
 import android.net.Uri
+import android.os.Build
 import android.support.v7.app.AppCompatActivity
 import android.os.Bundle
+import android.support.v4.app.NotificationCompat
+import android.support.v4.app.NotificationManagerCompat
 import android.widget.Toast
 import com.univocity.parsers.annotations.Parsed
 import com.univocity.parsers.common.processor.BeanListProcessor
@@ -29,6 +35,15 @@ class MainActivity : AppCompatActivity() {
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
         setContentView(R.layout.activity_main)
+        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) {
+            val channel = NotificationChannel("notifications", "roomview_mobile", NotificationManager.IMPORTANCE_DEFAULT).apply {
+                description = "channel for roomview mobile"
+            }
+            // Register the channel with the system
+            val notificationManager: NotificationManager =
+                    getSystemService(Context.NOTIFICATION_SERVICE) as NotificationManager
+            notificationManager.createNotificationChannel(channel)
+        }
         //check if path to csv is set in preferences
         //if not then we set status text
         //if it is, go ahead and load and connect to all rooms
@@ -103,11 +118,20 @@ class MainActivity : AppCompatActivity() {
                     .setPositiveButton("OK") { _, _ -> dialog = null; message = "Help Request From:"}.create()
             dialog!!.show()
         }else{
-            message += "\n" + room.room
             dialog!!.setMessage(message)
         }
         //TODO: show notification and vibrate
-
+        val mBuilder = NotificationCompat.Builder(this, "notifications")
+                .setSmallIcon(R.drawable.notification_icon_background)
+                .setContentTitle("Roomview Mobile")
+                .setContentText(message)
+                .setPriority(NotificationCompat.PRIORITY_DEFAULT)
+                .setLights(Color.RED, 500,500)
+                .setVibrate(arrayOf<Long>(1000, 1000, 1000).toLongArray())
+        with(NotificationManagerCompat.from(this)) {
+            // notificationId is a unique int for each notification that you must define
+            notify(1, mBuilder.build())
+        }
     }
 }
 
