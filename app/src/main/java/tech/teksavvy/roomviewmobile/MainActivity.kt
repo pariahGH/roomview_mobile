@@ -3,14 +3,10 @@ package tech.teksavvy.roomviewmobile
 import android.app.*
 import android.content.Context
 import android.content.Intent
-import android.graphics.Color
 import android.net.Uri
 import android.os.Build
 import android.support.v7.app.AppCompatActivity
 import android.os.Bundle
-import android.support.v4.app.NotificationCompat
-import android.support.v4.app.NotificationCompat.VISIBILITY_PUBLIC
-import android.support.v4.app.NotificationManagerCompat
 import android.widget.Toast
 import com.univocity.parsers.annotations.Parsed
 import com.univocity.parsers.common.processor.BeanListProcessor
@@ -18,17 +14,13 @@ import com.univocity.parsers.csv.CsvParser
 import com.univocity.parsers.csv.CsvParserSettings
 import kotlinx.android.synthetic.main.activity_main.*
 import java.io.FileNotFoundException
+import java.io.Serializable
 import java.nio.charset.Charset
-import java.util.concurrent.Executors
 
-class MainActivity : AppCompatActivity() {
-    val teststring = "need help".toByteArray(Charset.forName("US-ASCII")).joinToString(separator="") { i -> String.format("%02x",i) }
-    //must be sent to the unit in order for it to start talking to us
-    val data = intArrayOf(0x01,0x00,0x0b,0x0a,0xa6,0xca,0x37,0x00,0x72,0x40,0x00,0x00,0xf1,0x01)
+class MainActivity : AppCompatActivity(), Serializable {
     var fragments = arrayListOf<RoomFragment>().toMutableList()
     var dialog: AlertDialog? = null
     var message = "Help Request From:"
-    val service = Executors.newCachedThreadPool()
 
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
@@ -87,46 +79,42 @@ class MainActivity : AppCompatActivity() {
         }
         for(room in rooms){
             val frag = RoomFragment()
-            frag.init(room, teststring, data, this, service)
+            frag.room = room
+            frag.listener = this
+            val helpIntent = createPendingResult(2, Intent(), 0)
+            val errorIntent = createPendingResult(1, Intent(), 0)
             fragmentManager.beginTransaction().add(room_list.id, frag).commit()
             fragments.add(frag)
+            frag.init(errorIntent, helpIntent)
         }
     }
 
     fun onRetryClick(){
         for(frag in fragments){
             if(!frag.state){
-                frag.init(frag.fragRoom!!, teststring, data, this, service)
+                val helpIntent = createPendingResult(2, Intent(), 0)
+                val errorIntent = createPendingResult(1, Intent(), 0)
+                frag.init(errorIntent, helpIntent)
             }
         }
     }
 
     override fun onActivityResult(requestCode: Int, resultCode: Int, data: Intent?){
-        if(requestCode == 1337 && resultCode == Activity.RESULT_OK && data != null) {
-            val path = data.data
-            getSharedPreferences("roomview_mobile", Context.MODE_PRIVATE).edit().putString("filePath", path.toString()).apply()
-            parseCSV(path)
+        if(resultCode == Activity.RESULT_OK && data != null){
+            when(requestCode){
+                1 -> fragments.filter{it.room.ip == (data.getSerializableExtra("room") as RoomItem).ip}[0].setError()
+                2 -> dialog(data.extras.getSerializable("room") as RoomItem)
+                1337 -> {
+                    val path = data.data
+                    getSharedPreferences("roomview_mobile", Context.MODE_PRIVATE).edit().putString("filePath", path.toString()).apply()
+                    parseCSV(path)
+                }
+            }
         }
     }
 
     fun dialog(room:RoomItem){
         message += "\n" + room.room
-        val pendingIntent: PendingIntent = PendingIntent.getActivity(this, 0, Intent(this, MainActivity::class.java).apply {
-            flags = Intent.FLAG_ACTIVITY_CLEAR_TOP
-        }, 0)
-        val mBuilder = NotificationCompat.Builder(this, "notifications")
-                .setSmallIcon(R.drawable.untitled)
-                .setContentTitle("Roomview Mobile")
-                .setContentText(message.replace("\n"," "))
-                .setPriority(NotificationCompat.PRIORITY_DEFAULT)
-                .setLights(Color.RED, 500,500)
-                .setVibrate(arrayOf<Long>(1000, 1000, 1000).toLongArray())
-                .setAutoCancel(true)
-                .setVisibility(VISIBILITY_PUBLIC)
-                .setContentIntent(pendingIntent)
-        with(NotificationManagerCompat.from(this)) {
-            notify(1, mBuilder.build())
-        }
         if(dialog == null) {
             dialog = AlertDialog.Builder(this).setMessage(message).setTitle("Help Request")
                     .setPositiveButton("OK") { _, _ -> dialog = null; message = "Help Request From:"}.create()
@@ -137,9 +125,11 @@ class MainActivity : AppCompatActivity() {
     }
 }
 
-class RoomItem {
+class RoomItem : Serializable{
     @Parsed
     val ip:String = ""
     @Parsed
     val room:String = ""
+    val teststring = "need help".toByteArray(Charset.forName("US-ASCII")).joinToString(separator="") { i -> String.format("%02x",i) }
+    val data = intArrayOf(0x01,0x00,0x0b,0x0a,0xa6,0xca,0x37,0x00,0x72,0x40,0x00,0x00,0xf1,0x01)
 }
