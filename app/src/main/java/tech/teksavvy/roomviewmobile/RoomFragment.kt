@@ -14,20 +14,16 @@ import android.view.LayoutInflater
 import android.view.View
 import android.view.ViewGroup
 import android.widget.TextView
-import com.univocity.parsers.conversions.IntegerConversion
 import kotlinx.android.synthetic.main.room_fragment.*
-import kotlinx.android.synthetic.main.room_fragment.view.*
 import java.io.IOException
 import java.net.InetAddress
 import java.net.Socket
-import java.nio.charset.Charset
 import java.io.Serializable
 
 class RoomFragment: Fragment(), Serializable{
     var state = true
     lateinit var room:RoomItem
     lateinit var listener: MainActivity
-    //must be sent to the unit in order for it to start talking to us
 
     override fun onCreateView(inflater: LayoutInflater?, container: ViewGroup?, savedInstanceState: Bundle?): View {
         val v =inflater!!.inflate(R.layout.room_fragment, container, false)
@@ -35,7 +31,9 @@ class RoomFragment: Fragment(), Serializable{
         return v
     }
     fun init(errorIntent: PendingIntent, helpIntent: PendingIntent){
-        val intent = Intent(listener, RoomViewService::class.java).apply{ putExtra("room",room);putExtra("help",helpIntent);putExtra("error",errorIntent) }
+        val intent = Intent(listener, RoomViewService::class.java).apply{
+            putExtra("room",room);putExtra("help",helpIntent);putExtra("error",errorIntent)
+        }
         listener.startService(intent)
         textView?.setTextColor(Color.BLACK)
         state = true
@@ -61,12 +59,10 @@ class RoomViewService: Service(){
             val socket = Socket(InetAddress.getByName(room.ip), 41794)
             try {
                 val input = socket.getInputStream()
-                //do whatever this thing does to make it talk to us
                 for(i in room.data){
                     socket.getOutputStream().write(i)
                 }
                 socket.getOutputStream().flush()
-                //start listening
                 while(true){
                     val b = ByteArray(20)
                     input.read(b,0,20)
@@ -76,7 +72,8 @@ class RoomViewService: Service(){
                     }
                     if(resultstring.contains(room.teststring)){
                         help.send(applicationContext, Activity.RESULT_OK, Intent().apply{putExtra("room",room)})
-                        val pendingIntent: PendingIntent = PendingIntent.getActivity(this, 0, Intent(this, MainActivity::class.java).apply{addFlags(Intent.FLAG_ACTIVITY_CLEAR_TOP)}, 0)
+                        val rawIntent =  Intent(this, MainActivity::class.java).apply{addFlags(Intent.FLAG_ACTIVITY_CLEAR_TOP)}
+                        val pendingIntent: PendingIntent = PendingIntent.getActivity(this, 0, rawIntent, 0)
                         val mBuilder = NotificationCompat.Builder(this, "notifications")
                                 .setSmallIcon(R.drawable.untitled)
                                 .setContentTitle("Roomview Mobile")
