@@ -8,21 +8,22 @@ import android.content.Intent
 import android.graphics.Color
 import android.os.Bundle
 import android.os.IBinder
-import android.support.v4.app.NotificationCompat
-import android.support.v4.app.NotificationManagerCompat
 import android.view.LayoutInflater
 import android.view.View
 import android.view.ViewGroup
 import android.widget.TextView
+import androidx.core.app.NotificationCompat
+import androidx.core.app.NotificationManagerCompat
 import kotlinx.android.synthetic.main.room_fragment.*
 import java.io.IOException
 import java.net.InetAddress
 import java.net.Socket
 import java.io.Serializable
+import java.nio.charset.Charset
 
 class RoomFragment: Fragment(), Serializable{
     var state = true
-    lateinit var room:RoomItem
+    lateinit var room:RoomDb.RoomItem
     lateinit var listener: MainActivity
 
     override fun onCreateView(inflater: LayoutInflater?, container: ViewGroup?, savedInstanceState: Bundle?): View {
@@ -46,20 +47,25 @@ class RoomFragment: Fragment(), Serializable{
 }
 
 class RoomViewService: Service(){
+    val teststring = "need help".toByteArray(Charset.forName("US-ASCII"))
+            .joinToString(separator="") { i -> String.format("%02x",i) }
+    //I don't know what this means but the systems require this be sent to them for them to start talking to us
+    val data = intArrayOf(0x01,0x00,0x0b,0x0a,0xa6,0xca,0x37,0x00,0x72,0x40,0x00,0x00,0xf1,0x01)
+
     override fun onBind(intent: Intent?): IBinder? {
         return null
     }
 
     override fun onStartCommand(intent: Intent, flags: Int, startId: Int): Int{
         val args = intent.extras
-        val room = args.getSerializable("room") as RoomItem
+        val room = args!!.getSerializable("room") as RoomDb.RoomItem
         val error = args.getParcelable("error")  as PendingIntent
         val help = args.getParcelable("help") as PendingIntent
         Thread{
             val socket = Socket(InetAddress.getByName(room.ip), 41794)
             try {
                 val input = socket.getInputStream()
-                for(i in room.data){
+                for(i in data){
                     socket.getOutputStream().write(i)
                 }
                 socket.getOutputStream().flush()
@@ -70,7 +76,7 @@ class RoomViewService: Service(){
                     for(by in b){
                         resultstring += String.format("%02x",by)
                     }
-                    if(resultstring.contains(room.teststring)){
+                    if(resultstring.contains(teststring)){
                         help.send(applicationContext, Activity.RESULT_OK, Intent().apply{putExtra("room",room)})
                         val rawIntent =  Intent(this, MainActivity::class.java).apply{addFlags(Intent.FLAG_ACTIVITY_CLEAR_TOP)}
                         val pendingIntent: PendingIntent = PendingIntent.getActivity(this, 0, rawIntent, 0)

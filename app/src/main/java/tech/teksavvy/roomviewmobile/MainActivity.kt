@@ -4,11 +4,11 @@ import android.app.*
 import android.content.Context
 import android.content.Intent
 import android.net.Uri
+import android.os.AsyncTask
 import android.os.Build
-import android.support.v7.app.AppCompatActivity
 import android.os.Bundle
 import android.widget.Toast
-import com.univocity.parsers.annotations.Parsed
+import androidx.appcompat.app.AppCompatActivity
 import com.univocity.parsers.common.processor.BeanListProcessor
 import com.univocity.parsers.csv.CsvParser
 import com.univocity.parsers.csv.CsvParserSettings
@@ -16,12 +16,13 @@ import kotlinx.android.synthetic.main.activity_main.*
 import java.io.File
 import java.io.FileNotFoundException
 import java.io.Serializable
-import java.nio.charset.Charset
+import kotlin.concurrent.thread
 
 class MainActivity : AppCompatActivity(), Serializable {
     private var fragments = arrayListOf<RoomFragment>().toMutableList()
     private var dialog: AlertDialog? = null
     var message = "Help Request From:"
+    val database :RoomDb.RoomDao by lazy { (RoomDb.RoomViewDb.getInstance(this)).roomDao() }
 
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
@@ -29,11 +30,10 @@ class MainActivity : AppCompatActivity(), Serializable {
         val dirs = getExternalFilesDirs(null)
         val path = if(dirs.size == 2) dirs[1] else dirs[0]
         val logFile = File(path.absolutePath+"/logfile.txt")
-        System.out.println(path)
-        getSharedPreferences("roomview_mobile", Context.MODE_PRIVATE).edit().remove("filePath").apply()
         Thread.setDefaultUncaughtExceptionHandler { _, throwable ->
+            System.out.println(throwable.message)
             logFile.writeText(throwable.message+"\n")
-            Toast.makeText(this, "Uncaight exception logged", Toast.LENGTH_LONG).show()
+            Toast.makeText(this@MainActivity, "Uncaught exception logged", Toast.LENGTH_LONG).show()
         }
         if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) {
             val channel = NotificationChannel("notifications", "roomview_mobile", NotificationManager.IMPORTANCE_DEFAULT).apply {
@@ -44,13 +44,13 @@ class MainActivity : AppCompatActivity(), Serializable {
                     getSystemService(Context.NOTIFICATION_SERVICE) as NotificationManager
             notificationManager.createNotificationChannel(channel)
         }
-        val filePath = getSharedPreferences("roomview_mobile", Context.MODE_PRIVATE).getString("filePath", "")
-        if(filePath == ""){
-            status_text.text = "Please select CSV"
+
+        val loaded = getSharedPreferences("roomview_mobile", Context.MODE_PRIVATE).getBoolean("loaded", false)
+        if(loaded){
+            loadRooms(null)
+            status_text.text = "Rooms loaded"
         }else{
-            val uri = Uri.parse(filePath)
-            status_text.text = "CSV Loaded"
-            parseCSV(uri)
+            status_text.text = "Please load rooms"
         }
         load_button.setOnClickListener {
             val fileIntent = Intent(Intent.ACTION_OPEN_DOCUMENT).apply{
@@ -71,12 +71,20 @@ class MainActivity : AppCompatActivity(), Serializable {
     private fun parseCSV(filePath: Uri){
         try {
             val settings = CsvParserSettings()
-            val processor = BeanListProcessor<RoomItem>(RoomItem::class.java)
+            val processor = BeanListProcessor<RoomDb.RoomItem>(RoomDb.RoomItem::class.java)
             settings.setProcessor(processor)
             val parser = CsvParser(settings)
             parser.parse(contentResolver.openInputStream(filePath))
-            val rooms: List<RoomItem> = processor.beans
-            loadRooms(rooms)
+            doAsync{
+                database.deleteAllRooms()
+                processor.beans.map{
+                    database.insertRoom(it)
+                }
+                this.runOnUiThread {
+                    getSharedPreferences("roomview_mobile", Context.MODE_PRIVATE).edit().putBoolean("loaded", true).apply()
+                    loadRooms(processor.beans)
+                }
+            }.execute()
         }catch(e: FileNotFoundException) {
             status_text.text = "Please select CSV"
             Toast.makeText(this, "Currently selected file does not exist", Toast.LENGTH_LONG).show()
@@ -84,18 +92,22 @@ class MainActivity : AppCompatActivity(), Serializable {
         }
     }
 
-    private fun loadRooms(rooms: List<RoomItem>){
+    private fun loadRooms(rooms : List<RoomDb.RoomItem>?){
         fragments.map{fragmentManager.beginTransaction().remove(it).commit()}
-        rooms.map{room ->
-            val frag = RoomFragment()
-            frag.room = room
-            frag.listener = this
-            val helpIntent = createPendingResult(2, Intent(), 0)
-            val errorIntent = createPendingResult(1, Intent(), 0)
-            fragmentManager.beginTransaction().add(room_list.id, frag).commit()
-            fragments.add(frag)
-            frag.init(errorIntent, helpIntent)
-        }
+        doAsync {
+            (rooms ?: database.getRooms()).map { room ->
+                val frag = RoomFragment()
+                frag.room = room
+                frag.listener = this
+                val helpIntent = createPendingResult(2, Intent(), 0)
+                val errorIntent = createPendingResult(1, Intent(), 0)
+                this.runOnUiThread{
+                    fragmentManager.beginTransaction().add(room_list.id, frag).commit()
+                    fragments.add(frag)
+                    frag.init(errorIntent, helpIntent)
+                }
+            }
+        }.execute()
     }
 
     private fun onRetryClick(){
@@ -111,11 +123,11 @@ class MainActivity : AppCompatActivity(), Serializable {
     override fun onActivityResult(requestCode: Int, resultCode: Int, data: Intent?){
         if(resultCode == Activity.RESULT_OK && data != null){
             when(requestCode){
-                1 -> fragments.filter{it.room.ip == (data.getSerializableExtra("room") as RoomItem).ip}[0].setError()
-                2 -> dialog(data.extras.getSerializable("room") as RoomItem)
+                1 -> fragments.filter{it.room.ip == (data.getSerializableExtra("room") as RoomDb.RoomItem).ip}[0].setError()
+                2 -> dialog(data.extras!!.getSerializable("room") as RoomDb.RoomItem)
                 1337 -> {
-                    val path = data.data
-                    contentResolver.takePersistableUriPermission(data.data, Intent.FLAG_GRANT_READ_URI_PERMISSION
+                    val path = data.data!!
+                    contentResolver.takePersistableUriPermission(path, Intent.FLAG_GRANT_READ_URI_PERMISSION
                             or Intent.FLAG_GRANT_WRITE_URI_PERMISSION)
                     getSharedPreferences("roomview_mobile", Context.MODE_PRIVATE).edit().putString("filePath", path.toString()).apply()
                     parseCSV(path)
@@ -124,7 +136,7 @@ class MainActivity : AppCompatActivity(), Serializable {
         }
     }
 
-    private fun dialog(room:RoomItem){
+    private fun dialog(room:RoomDb.RoomItem){
         message += "\n" + room.room
         if(dialog == null) {
             dialog = AlertDialog.Builder(this).setMessage(message).setTitle("Help Request")
@@ -136,13 +148,9 @@ class MainActivity : AppCompatActivity(), Serializable {
     }
 }
 
-class RoomItem : Serializable{
-    @Parsed
-    val ip:String = ""
-    @Parsed
-    val room:String = ""
-    val teststring = "need help".toByteArray(Charset.forName("US-ASCII"))
-            .joinToString(separator="") { i -> String.format("%02x",i) }
-    //I don't know what this means but the systems require this be sent to them for them to start talking to us
-    val data = intArrayOf(0x01,0x00,0x0b,0x0a,0xa6,0xca,0x37,0x00,0x72,0x40,0x00,0x00,0xf1,0x01)
+class doAsync(val handler: () -> Unit) : AsyncTask<Void, Void, Void>() {
+    override fun doInBackground(vararg params: Void?): Void? {
+        handler()
+        return null
+    }
 }
